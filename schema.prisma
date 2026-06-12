@@ -1,0 +1,27 @@
+// C:\Users\user\kachna-studio\kachna-backend\prisma\schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // এখানে আর url লেখা যাবে না Prisma 7 এ
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  title       String
+  category    String   
+  videoUrl    String?
+  thumbnail   String?
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  email     String
+  subject   String
+  content   String
+  createdAt DateTime @default(now())
+}

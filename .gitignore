@@ -1,0 +1,17 @@
+node_modules
+
+# Environment variables — never commit secrets
+# Covers .env, .env.local, .env.production, and any *.{env} suffix
+.env
+.env.*
+**/.env
+**/.env.*
+*.env
+**/*.env
+!.env.example
+!**/.env.example
+
+/generated/prisma
+
+# Temporary scripts
+/scripts/create-admin.ts
