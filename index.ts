@@ -8,6 +8,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { createServer } from "http"; // 🚀 Node.js HTTP server
 import { Server } from "socket.io"; // 🚀 Socket.io Server
 import WebSocket from "ws"; // 🚀 OpenAI Realtime WS Client
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -21,6 +22,14 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+async function translateWithGemini(text: string, targetLang: string) {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const prompt = `Translate the following text to ${targetLang}. Return ONLY the translated text, nothing else. Text: ${text}`;
+  const result = await model.generateContent(prompt);
+  return result.response.text().trim();
+}
 
 const allowedOrigins = [
   "http://localhost:3000",
@@ -307,6 +316,15 @@ io.on("connection", (socket) => {
         }));
       }
     });
+  });
+
+  socket.on("translate-speech", async ({ text, targetLang }) => {
+    try {
+      const translatedText = await translateWithGemini(text, targetLang); 
+      io.emit("receive-translated-speech", { original: text, translated: translatedText });
+    } catch (error) {
+      console.error("Translation Error:", error);
+    }
   });
 
   socket.on("disconnect", () => {
