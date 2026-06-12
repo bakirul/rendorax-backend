@@ -22,15 +22,27 @@ const prisma = new PrismaClient({ adapter });
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://kachna-media-web.vercel.app",
+  "https://kachnamedia.com",
+  "https://www.kachnamedia.com"
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ["GET", "POST"],
+  credentials: true
+}));
 app.use(express.json());
 
 // 🚀 HTTP সার্ভার তৈরি এবং Socket.io কনফিগারেশন
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ["http://localhost:3000"], // Explicitly allow frontend
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
+    credentials: true
   },
 });
 
