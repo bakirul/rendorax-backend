@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.redisClient = exports.redisSubClient = exports.redisPubClient = void 0;
-// kachna-backend/redis.ts
+// rendorax-backend/redis.ts
 const ioredis_1 = __importDefault(require("ioredis"));
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const createRedisClient = () => {

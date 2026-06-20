@@ -7,7 +7,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const supabase_js_1 = require("@supabase/supabase-js");
 // Load environment variables from the frontend's config
-dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../../kachna-frontend/.env.local") });
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, "../../rendorax-frontend/.env.local") });
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
@@ -23,8 +23,8 @@ const supabase = (0, supabase_js_1.createClient)(supabaseUrl, supabaseServiceKey
     }
 });
 async function createAdminUser() {
-    const email = "admin-studio@kachnamedia.com";
-    const password = "KachnaStudio2026#";
+    const email = "admin-studio@rendorax.com";
+    const password = "RendoraxStudio2026#";
     console.log(`🚀 Provisioning admin user: ${email}...`);
     const { data, error } = await supabase.auth.admin.createUser({
         email,

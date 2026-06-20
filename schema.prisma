@@ -1,4 +1,4 @@
-// C:\Users\user\kachna-studio\kachna-backend\prisma\schema.prisma
+// C:\Users\user\rendorax-studio\rendorax-backend\prisma\schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,7 +11,7 @@ datasource db {
 model Project {
   id          String   @id @default(uuid())
   title       String
-  category    String   
+  category    String
   videoUrl    String?
   thumbnail   String?
   description String?

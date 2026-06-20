@@ -1,4 +1,4 @@
-// kachna-backend/redis.ts
+// rendorax-backend/redis.ts
 import Redis from "ioredis";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";

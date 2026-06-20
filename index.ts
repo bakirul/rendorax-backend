@@ -1,16 +1,20 @@
+// Dotenv must load before any module reads process.env (see src/lib/loadEnv.ts).
+import "./src/lib/loadEnv";
+
 import express from "express";
 import type { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import cors from "cors";
-import dotenv from "dotenv";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { createServer } from "http"; // 🚀 Node.js HTTP server
 import { Server } from "socket.io"; // 🚀 Socket.io Server
 import WebSocket from "ws"; // 🚀 OpenAI Realtime WS Client
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
-dotenv.config();
+import uploadRouter from "./src/routes/upload.routes";
+import mediaRouter from "./src/routes/media.routes";
+import storageRouter from "./src/routes/storage.routes";
+import { requireAuth } from "./src/middleware/requireAuth";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -21,11 +25,12 @@ const adapter = new PrismaPg(pool);
 // নতুন নিয়মে PrismaClient তৈরি
 const prisma = new PrismaClient({ adapter });
 const app = express();
+app.locals.prisma = prisma;
 const PORT = process.env.PORT || 4000;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 async function translateWithGemini(text: string, targetLang: string) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const prompt = `Translate the following text to ${targetLang}. Return ONLY the translated text, nothing else. Text: ${text}`;
   const result = await model.generateContent(prompt);
   return result.response.text().trim();
@@ -33,9 +38,9 @@ async function translateWithGemini(text: string, targetLang: string) {
 
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://kachna-media-web.vercel.app",
-  "https://kachnamedia.com",
-  "https://www.kachnamedia.com"
+  "https://rendorax-media-web.vercel.app",
+  "https://rendorax.com",
+  "https://www.rendorax.com"
 ];
 
 app.use(cors({
@@ -56,6 +61,7 @@ const io = new Server(httpServer, {
 });
 
 const clientLanguages: Record<string, string> = {};
+const socketCallSessions: Record<string, { roomId: string; userId: string }> = {};
 // Map: roomId -> targetLang -> WebSocket
 const openAIConnections: Record<string, Record<string, WebSocket>> = {};
 
@@ -105,8 +111,17 @@ io.on("connection", (socket) => {
   // ==========================================
   socket.on("join-call", (roomId: string, userId: string) => {
     socket.join(`call_${roomId}`);
+    socketCallSessions[socket.id] = { roomId, userId };
     console.log(`📞 User ${userId} joined call room: call_${roomId}`);
     socket.to(`call_${roomId}`).emit("user-connected", userId, socket.id);
+  });
+
+  socket.on("leave-call", (roomId: string, userId: string) => {
+    const callRoom = `call_${roomId}`;
+    socket.to(callRoom).emit("user-disconnected", socket.id, userId);
+    socket.leave(callRoom);
+    delete socketCallSessions[socket.id];
+    console.log(`📴 User ${userId} left call room: ${callRoom}`);
   });
 
   socket.on("webrtc-offer", (data: { targetSocketId: string; callerId: string; sdp: any }) => {
@@ -192,12 +207,18 @@ io.on("connection", (socket) => {
   });
 
   // 💬 LIVE SESSION CHAT MESSAGE HANDLER
-  socket.on("send-chat-message", (data: { fileId: string; senderName: string; text: string }) => {
+  socket.on("send-chat-message", (data: {
+    fileId: string;
+    id?: string;
+    senderName: string;
+    senderSocketId?: string;
+    text: string;
+    senderLanguage?: string;
+    timestamp?: string;
+  }) => {
     console.log(`💬 Chat from ${data.senderName} in room ${data.fileId}: ${data.text}`);
-    // Broadcast to the WebRTC call room
+    // Only emit to the live call room — avoid duplicate delivery to join-lobby + join-call rooms.
     socket.to(`call_${data.fileId}`).emit("receive-chat-message", data);
-    // Broadcast to the standard live chat room as well (for backwards compatibility)
-    socket.to(data.fileId).emit("receive-chat-message", data);
   });
 
   // ==========================================
@@ -327,28 +348,56 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
-    console.log(`❌ Client disconnected: ${socket.id}`);
-    io.emit("user-disconnected", socket.id);
+  socket.on("disconnect", (reason) => {
+    console.log(`❌ Client disconnected: ${socket.id} (${reason})`);
+
+    const session = socketCallSessions[socket.id];
+    if (session) {
+      io.to(`call_${session.roomId}`).emit(
+        "user-disconnected",
+        socket.id,
+        session.userId,
+      );
+      delete socketCallSessions[socket.id];
+    }
+
+    delete clientLanguages[socket.id];
+
+    for (const room of socket.rooms) {
+      if (room === socket.id) continue;
+      if (room.startsWith("call_")) {
+        if (!session) {
+          io.to(room).emit("user-disconnected", socket.id);
+        }
+        continue;
+      }
+      io.to(room).emit("timeline-user-disconnected", socket.id);
+      io.to(room).emit("user-disconnected", socket.id);
+    }
   });
 });
+
+app.use("/api/upload", uploadRouter);
+app.use("/api/media", mediaRouter);
+app.use("/api/storage", storageRouter);
 
 // Health Check
 app.get("/api/health", (req: Request, res: Response) => {
   res.json({ status: "Studio Backend is Running" });
 });
 
-// Get Projects
-app.get("/api/projects", async (req: Request, res: Response) => {
+// Get Projects (authenticated)
+app.get("/api/projects", requireAuth, async (req: Request, res: Response) => {
   try {
     const projects = await prisma.project.findMany();
     res.json(projects);
   } catch (error) {
+    console.error("Failed to fetch projects:", error);
     res.status(500).json({ error: "Failed to fetch projects" });
   }
 });
 
 // 🚀 app.listen এর বদলে httpServer.listen হবে
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Studio API & WebSocket running on http://localhost:${PORT}`);
+  console.log(`🚀 Rendorax API & WebSocket running on http://localhost:${PORT}`);
 });

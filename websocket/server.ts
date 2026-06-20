@@ -1,4 +1,4 @@
-// kachna-backend/websocket/server.ts
+// rendorax-backend/websocket/server.ts
 import { Server, Socket } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { redisPubClient, redisSubClient } from "../redis";

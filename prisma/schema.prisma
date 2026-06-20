@@ -1,13 +1,49 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public", "auth"]
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  title       String
+  category    String
+  videoUrl    String?
+  thumbnail   String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@schema("public")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  email     String
+  subject   String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@schema("public")
+}
+
+model MediaAsset {
+  id        String   @id @default(uuid())
+  fileName  String
+  publicUrl String
+  objectKey String?
+  mimeType  String
+  fileSize  Int?
+  folder    String?
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([objectKey])
+  @@index([createdAt])
+  @@schema("public")
 }
