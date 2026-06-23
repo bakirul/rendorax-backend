@@ -4,11 +4,15 @@ import { PrismaClient } from "@prisma/client";
 import {
   completeMultipartUpload,
   createPresignedUpload,
+  createPresignedUploadForKey,
   generatePresignedDownloadUrl,
   initMultipartUpload,
   listR2Objects,
   presignMultipartParts,
+  buildPublicUrl,
+  buildThumbnailObjectKey,
 } from "../lib/r2";
+import { isAllowedR2ObjectKey } from "../lib/storagePolicy";
 import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
@@ -23,14 +27,34 @@ function normalizeFolder(folderParam: string | undefined): string | null | undef
 
 router.post("/r2/presign-upload", async (req: Request, res: Response) => {
   try {
-    const { fileName, contentType } = req.body as {
+    const { fileName, contentType, objectKey } = req.body as {
       fileName?: string;
       contentType?: string;
+      objectKey?: string;
     };
 
-    if (!fileName || !contentType) {
+    if (!contentType) {
       return res.status(400).json({
-        error: "fileName and contentType are required",
+        error: "contentType is required",
+      });
+    }
+
+    if (objectKey?.trim()) {
+      const normalizedKey = objectKey.trim();
+      if (!isAllowedR2ObjectKey(normalizedKey)) {
+        return res.status(400).json({
+          error:
+            "objectKey must start with uploads/, thumbnails/, or projects/ and cannot contain path traversal",
+        });
+      }
+
+      const result = await createPresignedUploadForKey(normalizedKey, contentType);
+      return res.json(result);
+    }
+
+    if (!fileName) {
+      return res.status(400).json({
+        error: "fileName or objectKey is required",
       });
     }
 
@@ -135,14 +159,32 @@ router.get("/r2/list", async (req: Request, res: Response) => {
     const folder = normalizeFolder(req.query.folder as string | undefined);
 
     let objects = await listR2Objects(prefix);
+    const prisma = req.app.locals.prisma as PrismaClient;
+
+    const dbAssets = await prisma.mediaAsset.findMany({
+      where: folder !== undefined ? { folder } : undefined,
+      select: { publicUrl: true, thumbnailUrl: true },
+    });
+    const thumbnailByPublicUrl = new Map(
+      dbAssets.map((asset) => [asset.publicUrl, asset.thumbnailUrl]),
+    );
+
+    objects = objects.map((object) => {
+      const dbThumb = thumbnailByPublicUrl.get(object.publicUrl) ?? null;
+      const thumbnailUrl =
+        dbThumb ??
+        (object.mimeType.startsWith("video/")
+          ? buildPublicUrl(buildThumbnailObjectKey(object.key))
+          : null);
+
+      return {
+        ...object,
+        thumbnailUrl,
+      };
+    });
 
     if (folder !== undefined) {
-      const prisma = req.app.locals.prisma as PrismaClient;
-      const assets = await prisma.mediaAsset.findMany({
-        where: { folder },
-        select: { publicUrl: true },
-      });
-      const allowedUrls = new Set(assets.map((asset) => asset.publicUrl));
+      const allowedUrls = new Set(dbAssets.map((asset) => asset.publicUrl));
       objects = objects.filter((object) => allowedUrls.has(object.publicUrl));
     }
 

@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export interface AuthenticatedRequest extends Request {
-  user?: { id: string; email?: string };
+  user?: { id: string; email?: string; role?: string };
 }
 
 let supabase: SupabaseClient | null = null;
@@ -43,6 +43,13 @@ export async function requireAuth(
     return;
   }
 
-  req.user = { id: data.user.id, email: data.user.email };
+  req.user = {
+    id: data.user.id,
+    email: data.user.email,
+    role:
+      typeof data.user.app_metadata?.role === "string"
+        ? data.user.app_metadata.role
+        : undefined,
+  };
   next();
 }

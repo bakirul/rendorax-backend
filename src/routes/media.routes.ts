@@ -1,23 +1,36 @@
 import { Router } from "express";
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { transcribeMediaToSrt } from "../lib/transcription";
-import { requireAuth } from "../middleware/requireAuth";
+import { isAllowedTranscribeFileUrl } from "../lib/storagePolicy";
+import {
+  requireAuth,
+  type AuthenticatedRequest,
+} from "../middleware/requireAuth";
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.post("/assets", async (req: Request, res: Response) => {
+function isAdminUser(req: AuthenticatedRequest): boolean {
+  return req.user?.role === "admin";
+}
+
+router.post("/assets", async (req: AuthenticatedRequest, res: Response) => {
   const prisma = req.app.locals.prisma as PrismaClient;
 
   try {
-    const { fileName, publicUrl, mimeType, userId, folder, fileSize, objectKey } =
+    const authenticatedUserId = req.user?.id;
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { fileName, publicUrl, thumbnailUrl, mimeType, folder, fileSize, objectKey } =
       req.body as {
         fileName?: string;
         publicUrl?: string;
+        thumbnailUrl?: string | null;
         mimeType?: string;
-        userId?: string;
         folder?: string | null;
         fileSize?: number;
         objectKey?: string;
@@ -46,9 +59,10 @@ router.post("/assets", async (req: Request, res: Response) => {
       data: {
         fileName,
         publicUrl,
+        thumbnailUrl: thumbnailUrl?.trim() || null,
         objectKey: objectKey?.trim() || null,
         mimeType,
-        userId: userId ?? null,
+        userId: authenticatedUserId,
         folder: normalizedFolder,
         fileSize: normalizedFileSize,
       },
@@ -66,20 +80,29 @@ router.post("/assets", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/assets", async (req: Request, res: Response) => {
+router.get("/assets", async (req: AuthenticatedRequest, res: Response) => {
   const prisma = req.app.locals.prisma as PrismaClient;
 
   try {
-    const userId = req.query.userId as string | undefined;
+    const authenticatedUserId = req.user?.id;
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const requestedUserId = req.query.userId as string | undefined;
     const folderParam = req.query.folder as string | undefined;
     const normalizedFolder =
       folderParam !== undefined
         ? folderParam.trim().replace(/^\/+|\/+$/g, "") || null
         : undefined;
 
+    const scopedUserId = isAdminUser(req)
+      ? requestedUserId?.trim() || undefined
+      : authenticatedUserId;
+
     const assets = await prisma.mediaAsset.findMany({
       where: {
-        ...(userId ? { userId } : {}),
+        ...(scopedUserId ? { userId: scopedUserId } : {}),
         ...(normalizedFolder !== undefined ? { folder: normalizedFolder } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -92,7 +115,7 @@ router.get("/assets", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/transcribe", async (req: Request, res: Response) => {
+router.post("/transcribe", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { assetId, fileUrl, language } = req.body as {
       assetId?: string;
@@ -103,6 +126,12 @@ router.post("/transcribe", async (req: Request, res: Response) => {
     if (!assetId || !fileUrl) {
       return res.status(400).json({
         error: "assetId and fileUrl are required",
+      });
+    }
+
+    if (!isAllowedTranscribeFileUrl(fileUrl)) {
+      return res.status(400).json({
+        error: "fileUrl host is not allowed for transcription",
       });
     }
 

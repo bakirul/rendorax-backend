@@ -75,6 +75,29 @@ export async function createPresignedUpload(
   return { uploadUrl, publicUrl, objectKey };
 }
 
+export async function createPresignedUploadForKey(
+  objectKey: string,
+  contentType: string,
+): Promise<PresignedUploadResult> {
+  if (!r2BucketName) {
+    throw new Error("R2_BUCKET_NAME is not configured");
+  }
+
+  const normalizedKey = objectKey.replace(/^\/+/, "");
+  const uploadUrl = await generatePresignedUploadUrl(normalizedKey, contentType);
+  const publicUrl = buildPublicUrl(normalizedKey);
+
+  return { uploadUrl, publicUrl, objectKey: normalizedKey };
+}
+
+/** Derives a deterministic thumbnail key from a video object key. */
+export function buildThumbnailObjectKey(videoObjectKey: string): string {
+  const stem = videoObjectKey
+    .replace(/^uploads\//, "")
+    .replace(/\.[^/.]+$/, "");
+  return `thumbnails/${stem}.webp`;
+}
+
 export async function generatePresignedUploadUrl(
   objectKey: string,
   contentType: string
@@ -119,6 +142,7 @@ export interface R2ListedObject {
   key: string;
   fileName: string;
   publicUrl: string;
+  thumbnailUrl?: string | null;
   mimeType: string;
   fileSize: number | null;
   lastModified: string;
