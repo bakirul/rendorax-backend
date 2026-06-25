@@ -48,3 +48,14 @@ model MediaAsset {
   @@index([createdAt])
   @@schema("public")
 }
+
+model MediaFolder {
+  id        String   @id @default(uuid())
+  path      String
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, path])
+  @@index([userId])
+  @@schema("public")
+}

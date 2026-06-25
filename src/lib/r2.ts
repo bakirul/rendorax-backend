@@ -3,6 +3,7 @@ import path from "path";
 import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -37,14 +38,56 @@ export const r2Client = new S3Client({
   },
 });
 
-export function buildPublicUrl(objectKey: string): string {
-  const publicBaseUrl =
-    process.env.R2_PUBLIC_URL ?? process.env.R2_PUBLIC_DOMAIN;
-  if (publicBaseUrl) {
-    return `${publicBaseUrl.replace(/\/$/, "")}/${objectKey}`;
+export function normalizeObjectKey(objectKey: string): string {
+  return objectKey.replace(/^\/+/, "").trim();
+}
+
+export function getPublicBaseUrl(): string {
+  const raw = process.env.R2_PUBLIC_URL ?? process.env.R2_PUBLIC_DOMAIN;
+  if (!raw?.trim()) {
+    throw new Error("Configure R2_PUBLIC_URL for public file URLs");
   }
 
-  throw new Error("Configure R2_PUBLIC_URL for public file URLs");
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+}
+
+export function buildPublicUrl(objectKey: string): string {
+  const normalizedKey = normalizeObjectKey(objectKey);
+  if (!normalizedKey) {
+    throw new Error("objectKey is required");
+  }
+
+  const baseUrl = getPublicBaseUrl();
+  let basePathname = "";
+
+  try {
+    basePathname = new URL(baseUrl).pathname.replace(/\/$/, "");
+  } catch {
+    return `${baseUrl}/${normalizedKey}`;
+  }
+
+  if (basePathname && basePathname !== "/") {
+    const baseSuffix = basePathname.replace(/^\//, "");
+
+    if (normalizedKey === baseSuffix) {
+      return baseUrl;
+    }
+
+    if (normalizedKey.startsWith(`${baseSuffix}/`)) {
+      return `${baseUrl}/${normalizedKey.slice(baseSuffix.length + 1)}`;
+    }
+
+    if (baseSuffix.endsWith("uploads") && normalizedKey.startsWith("uploads/")) {
+      return `${baseUrl}/${normalizedKey.slice("uploads/".length)}`;
+    }
+  }
+
+  return `${baseUrl}/${normalizedKey}`;
 }
 
 export function createR2ObjectKey(fileName: string): string {
@@ -315,4 +358,22 @@ export async function completeMultipartUpload(
   );
 
   return buildPublicUrl(objectKey);
+}
+
+export async function deleteR2Object(objectKey: string): Promise<void> {
+  if (!r2BucketName) {
+    throw new Error("R2_BUCKET_NAME is not configured");
+  }
+
+  const normalizedKey = objectKey.replace(/^\/+/, "");
+  if (!normalizedKey) {
+    throw new Error("objectKey is required");
+  }
+
+  await r2Client.send(
+    new DeleteObjectCommand({
+      Bucket: r2BucketName,
+      Key: normalizedKey,
+    }),
+  );
 }

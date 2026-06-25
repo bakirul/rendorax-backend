@@ -45,8 +45,9 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: allowedOrigins,
-  methods: ["GET", "POST"],
-  credentials: true
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 }));
 app.use(express.json());
 
@@ -55,8 +56,9 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   },
 });
 
